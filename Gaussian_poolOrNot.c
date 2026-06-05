@@ -31,7 +31,7 @@
   if(  prob_data1_bySampling > prob_data2_bySampling  )   ++model##NUM##_sampling_favors1; \
   if(  prob_data1_bySumming  > prob_data2_bySumming   )   ++model##NUM##_summing__favors1; \
   printf( "Data maximum likelihood under (one,two) component model= (%g,TODO)\n", \
-          data_Gauss1_maxLikelihood() /* , data_Gauss2_maxLikelihood() */  \
+          data_Gauss1_maxLikelihood() , data_Gauss2_maxLikelihood()  \
           );                                                               \
   printf( "Integrals by sampling= (%g,%g)  by summing: (%g,%g)\n\n",       \
           prob_data1_bySampling, prob_data2_bySampling,                    \
@@ -283,15 +283,15 @@ double data_Gauss2_maxLikelihood(){
   double prevLogLik = -INFINITY; // previos LogLik
   double curLogLik = log_prob_data_given_2Gauss( mixCof, g1, g2 ); // current LogLik
 
-  if( trace_EM ){
-    printf("\n[EM init]\n");
-    printf("iter=%3d  logLik=% .10f  mix=% .6f  "
-           "g1=(mu=% .6f, sigma=% .6f)  "
-           "g2=(mu=% .6f, sigma=% .6f)\n",
-           -1, curLogLik, mixCof,
-           g1.mu, g1.sigma,
-           g2.mu, g2.sigma);
-  }
+  // if( trace_EM ){
+  //   printf("\n[EM init]\n");
+  //   printf("iter=%3d  logLik=% .10f  mix=% .6f  "
+  //          "g1=(mu=% .6f, sigma=% .6f)  "
+  //          "g2=(mu=% .6f, sigma=% .6f)\n",
+  //          -1, curLogLik, mixCof,
+  //          g1.mu, g1.sigma,
+  //          g2.mu, g2.sigma);
+  // }
 
   // GMM-EM algorithm
   for( uint iter = 0; iter < maxIter; ++iter ){
@@ -326,9 +326,9 @@ double data_Gauss2_maxLikelihood(){
 
     // check if N1 or N2 is too small, to avoid one of the components collapsing to zero weight
     if( N1 < minWeight * dataN || N2 < minWeight * dataN ){
-      if( trace_EM ){
-        printf("[EM stop] dead component: N1=%g, N2=%g\n", N1, N2);
-      }
+      // if( trace_EM ){
+      //   printf("[EM stop] dead component: N1=%g, N2=%g\n", N1, N2);
+      // }
       break;
     }
 
@@ -384,16 +384,16 @@ double data_Gauss2_maxLikelihood(){
     prevLogLik = curLogLik;
     curLogLik = log_prob_data_given_2Gauss( mixCof, g1, g2 );
 
-    if( trace_EM ){
-      printf("iter=%3u  logLik=% .10f  diff=% .3e  mix=% .6f  "
-             "N1=% .4f  N2=% .4f  "
-             "g1=(mu=% .6f, sigma=% .6f)  "
-             "g2=(mu=% .6f, sigma=% .6f)\n",
-             iter, curLogLik, curLogLik - prevLogLik, mixCof,
-             N1, N2,
-             g1.mu, g1.sigma,
-             g2.mu, g2.sigma);
-    }
+    // if( trace_EM ){
+    //   printf("iter=%3u  logLik=% .10f  diff=% .3e  mix=% .6f  "
+    //          "N1=% .4f  N2=% .4f  "
+    //          "g1=(mu=% .6f, sigma=% .6f)  "
+    //          "g2=(mu=% .6f, sigma=% .6f)\n",
+    //          iter, curLogLik, curLogLik - prevLogLik, mixCof,
+    //          N1, N2,
+    //          g1.mu, g1.sigma,
+    //          g2.mu, g2.sigma);
+    // }
 
     if( curLogLik + 1e-8 < prevLogLik ){
       printf("[WARNING] EM log-likelihood decreased: prev=%g, cur=%g\n",
@@ -408,7 +408,7 @@ double data_Gauss2_maxLikelihood(){
     }
   }
 
-  Return likelihood
+  // Return likelihood
   curLogLik = log_prob_data_given_2Gauss( mixCof, g1, g2 );
   return exp(curLogLik);
   // return curLogLik;
