@@ -233,6 +233,16 @@ double prob_data_given_2Gauss( const double mixCof, const Gauss_params Gauss1, c
     return prob;
 }
 
+// Add for computing log likelihood (2 components)
+double log_prob_data_given_2Gauss(const double mixCof, const Gauss_params Gauss1, const Gauss_params Gauss2){
+  double logprob = 0.0;
+  for( uint i = 0; i < dataN; ++i ){
+    double p1 = mixCof * GSLfun_ran_gaussian_pdf( data[i], Gauss1 );
+    double p2 = (1.0 - mixCof) * GSLfun_ran_gaussian_pdf( data[i], Gauss2 );
+    logprob += log( p1 + p2 );
+  }
+  return logprob;
+}
 
 /* Return maximum likelihood of the data using a single Gaussian
  *
@@ -247,9 +257,162 @@ double data_Gauss1_maxLikelihood(){
 /* Todo:
  *   Implement a maximum likelihood estimation routine for the two component model.
  *   Could use the soft k-means approach of the D. MacKay book Chapter 22.
+ *   I use GMM-EM algorithm
  *
  *   double data_Gauss2_maxLikelihood(){...}
 */
+double data_Gauss2_maxLikelihood(){
+
+  const uint maxIter = 500;
+  const double tol = 1e-10; // tolerance for convergence, based on log likelihood change
+  const double minSigma = 1e-6;
+  const double minWeight = 1e-6;
+
+  // Initialization
+  double mean = data_sample_mean();
+  double std = sqrt( data_sample_variance() );
+
+  if( std < minSigma ){
+    std = 1.0;
+  }
+
+  Gauss_params g1 = { mean - 0.5 * std, std };
+  Gauss_params g2 = { mean + 0.5 * std, std };
+  double mixCof = 0.5;
+
+  double prevLogLik = -INFINITY; // previos LogLik
+  double curLogLik = log_prob_data_given_2Gauss( mixCof, g1, g2 ); // current LogLik
+
+  if( trace_EM ){
+    printf("\n[EM init]\n");
+    printf("iter=%3d  logLik=% .10f  mix=% .6f  "
+           "g1=(mu=% .6f, sigma=% .6f)  "
+           "g2=(mu=% .6f, sigma=% .6f)\n",
+           -1, curLogLik, mixCof,
+           g1.mu, g1.sigma,
+           g2.mu, g2.sigma);
+  }
+
+  // GMM-EM algorithm
+  for( uint iter = 0; iter < maxIter; ++iter ){
+
+    double N1 = 0.0; //effective number of points assigned to component 1
+    double N2 = 0.0; //effective number of points assigned to component 1
+    double sum1 = 0.0;
+    double sum2 = 0.0;
+
+    // E-step + collect sums for mean update
+    for( uint i = 0; i < dataN; ++i ){
+
+      double p1 = mixCof * GSLfun_ran_gaussian_pdf( data[i], g1 );
+      double p2 = (1.0 - mixCof) * GSLfun_ran_gaussian_pdf( data[i], g2 );
+      double denom = p1 + p2;
+
+      double r1;
+      if( denom <= 0.0 || !isfinite(denom) ){
+        r1 = 0.5;
+      }else{
+        r1 = p1 / denom;
+      }
+
+      double r2 = 1.0 - r1;
+
+      N1 += r1;
+      N2 += r2;
+
+      sum1 += r1 * data[i];
+      sum2 += r2 * data[i];
+    }
+
+    // check if N1 or N2 is too small, to avoid one of the components collapsing to zero weight
+    if( N1 < minWeight * dataN || N2 < minWeight * dataN ){
+      if( trace_EM ){
+        printf("[EM stop] dead component: N1=%g, N2=%g\n", N1, N2);
+      }
+      break;
+    }
+
+    // M step: update means
+    double new_mu1 = sum1 / N1;
+    double new_mu2 = sum2 / N2;
+
+    // M step: update variances
+    double var1 = 0.0;
+    double var2 = 0.0;
+
+    for( uint i = 0; i < dataN; ++i ){
+
+      double p1 = mixCof * GSLfun_ran_gaussian_pdf( data[i], g1 );
+      double p2 = (1.0 - mixCof) * GSLfun_ran_gaussian_pdf( data[i], g2 );
+      double denom = p1 + p2;
+
+      double r1;
+      if( denom <= 0.0 || !isfinite(denom) ){
+        r1 = 0.5;
+      }else{
+        r1 = p1 / denom;
+      }
+
+      double r2 = 1.0 - r1;
+
+      double diff1 = data[i] - new_mu1;
+      double diff2 = data[i] - new_mu2;
+
+      var1 += r1 * diff1 * diff1;
+      var2 += r2 * diff2 * diff2;
+    }
+
+    var1 /= N1;
+    var2 /= N2;
+
+    if( var1 < minSigma * minSigma ){
+      var1 = minSigma * minSigma;
+    }
+
+    if( var2 < minSigma * minSigma ){
+      var2 = minSigma * minSigma;
+    }
+
+    // M step update
+    mixCof = N1 / (double)dataN;
+    g1.mu = new_mu1;
+    g2.mu = new_mu2;
+    g1.sigma = sqrt(var1);
+    g2.sigma = sqrt(var2);
+
+    // Check convergence by log likelihood
+    prevLogLik = curLogLik;
+    curLogLik = log_prob_data_given_2Gauss( mixCof, g1, g2 );
+
+    if( trace_EM ){
+      printf("iter=%3u  logLik=% .10f  diff=% .3e  mix=% .6f  "
+             "N1=% .4f  N2=% .4f  "
+             "g1=(mu=% .6f, sigma=% .6f)  "
+             "g2=(mu=% .6f, sigma=% .6f)\n",
+             iter, curLogLik, curLogLik - prevLogLik, mixCof,
+             N1, N2,
+             g1.mu, g1.sigma,
+             g2.mu, g2.sigma);
+    }
+
+    if( curLogLik + 1e-8 < prevLogLik ){
+      printf("[WARNING] EM log-likelihood decreased: prev=%g, cur=%g\n",
+             prevLogLik, curLogLik);
+    }
+
+    if( fabs(curLogLik - prevLogLik) < tol ){
+      if( trace_EM ){
+        printf("[EM stop] converged at iter=%u\n", iter);
+      }
+      break;
+    }
+  }
+
+  Return likelihood
+  curLogLik = log_prob_data_given_2Gauss( mixCof, g1, g2 );
+  return exp(curLogLik);
+  // return curLogLik;
+}
 
 
 
