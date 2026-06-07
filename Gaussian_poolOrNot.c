@@ -222,7 +222,6 @@ double prob_data_given_1Gauss( const Gauss_params params ){
   return prob;
 }
 
-
 // Return Ｐ[D|m,μ₁,σ₁,μ₂,σ₂]
 double prob_data_given_2Gauss( const double mixCof, const Gauss_params Gauss1, const Gauss_params Gauss2  ){
     double prob= 1.0;
@@ -265,16 +264,10 @@ double data_Gauss2_maxLikelihood(){
 
   const uint maxIter = 500;
   const double tol = 1e-10; // tolerance for convergence, based on log likelihood change
-  const double minSigma = 1e-6;
-  const double minWeight = 1e-6;
 
   // Initialization
   double mean = data_sample_mean();
   double std = sqrt( data_sample_variance() );
-
-  if( std < minSigma ){
-    std = 1.0;
-  }
 
   Gauss_params g1 = { mean - 0.5 * std, std };
   Gauss_params g2 = { mean + 0.5 * std, std };
@@ -283,21 +276,11 @@ double data_Gauss2_maxLikelihood(){
   double prevLogLik = -INFINITY; // previos LogLik
   double curLogLik = log_prob_data_given_2Gauss( mixCof, g1, g2 ); // current LogLik
 
-  // if( trace_EM ){
-  //   printf("\n[EM init]\n");
-  //   printf("iter=%3d  logLik=% .10f  mix=% .6f  "
-  //          "g1=(mu=% .6f, sigma=% .6f)  "
-  //          "g2=(mu=% .6f, sigma=% .6f)\n",
-  //          -1, curLogLik, mixCof,
-  //          g1.mu, g1.sigma,
-  //          g2.mu, g2.sigma);
-  // }
-
   // GMM-EM algorithm
   for( uint iter = 0; iter < maxIter; ++iter ){
 
     double N1 = 0.0; //effective number of points assigned to component 1
-    double N2 = 0.0; //effective number of points assigned to component 1
+    double N2 = 0.0; //effective number of points assigned to component 2
     double sum1 = 0.0;
     double sum2 = 0.0;
 
@@ -309,11 +292,7 @@ double data_Gauss2_maxLikelihood(){
       double denom = p1 + p2;
 
       double r1;
-      if( denom <= 0.0 || !isfinite(denom) ){
-        r1 = 0.5;
-      }else{
-        r1 = p1 / denom;
-      }
+      r1 = p1 / denom;
 
       double r2 = 1.0 - r1;
 
@@ -322,14 +301,6 @@ double data_Gauss2_maxLikelihood(){
 
       sum1 += r1 * data[i];
       sum2 += r2 * data[i];
-    }
-
-    // check if N1 or N2 is too small, to avoid one of the components collapsing to zero weight
-    if( N1 < minWeight * dataN || N2 < minWeight * dataN ){
-      // if( trace_EM ){
-      //   printf("[EM stop] dead component: N1=%g, N2=%g\n", N1, N2);
-      // }
-      break;
     }
 
     // M step: update means
@@ -347,11 +318,7 @@ double data_Gauss2_maxLikelihood(){
       double denom = p1 + p2;
 
       double r1;
-      if( denom <= 0.0 || !isfinite(denom) ){
-        r1 = 0.5;
-      }else{
-        r1 = p1 / denom;
-      }
+      r1 = p1 / denom;
 
       double r2 = 1.0 - r1;
 
@@ -365,14 +332,6 @@ double data_Gauss2_maxLikelihood(){
     var1 /= N1;
     var2 /= N2;
 
-    if( var1 < minSigma * minSigma ){
-      var1 = minSigma * minSigma;
-    }
-
-    if( var2 < minSigma * minSigma ){
-      var2 = minSigma * minSigma;
-    }
-
     // M step update
     mixCof = N1 / (double)dataN;
     g1.mu = new_mu1;
@@ -384,26 +343,12 @@ double data_Gauss2_maxLikelihood(){
     prevLogLik = curLogLik;
     curLogLik = log_prob_data_given_2Gauss( mixCof, g1, g2 );
 
-    // if( trace_EM ){
-    //   printf("iter=%3u  logLik=% .10f  diff=% .3e  mix=% .6f  "
-    //          "N1=% .4f  N2=% .4f  "
-    //          "g1=(mu=% .6f, sigma=% .6f)  "
-    //          "g2=(mu=% .6f, sigma=% .6f)\n",
-    //          iter, curLogLik, curLogLik - prevLogLik, mixCof,
-    //          N1, N2,
-    //          g1.mu, g1.sigma,
-    //          g2.mu, g2.sigma);
-    // }
-
     if( curLogLik + 1e-8 < prevLogLik ){
       printf("[WARNING] EM log-likelihood decreased: prev=%g, cur=%g\n",
              prevLogLik, curLogLik);
     }
 
     if( fabs(curLogLik - prevLogLik) < tol ){
-      if( trace_EM ){
-        printf("[EM stop] converged at iter=%u\n", iter);
-      }
       break;
     }
   }
@@ -413,8 +358,6 @@ double data_Gauss2_maxLikelihood(){
   return exp(curLogLik);
   // return curLogLik;
 }
-
-
 
 /* Compute Riemann sum to approximate the integral
  *

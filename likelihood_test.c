@@ -153,44 +153,6 @@ void data_generate_2component( Gauss_mixture_params params ){
   }
 }
 
-
-// /* ───────────  Numerical integration precomputation  ────────── */
-
-// // Arrays to hold precomputed values.
-// double cdfInv_Gauss[CDF_GAUSS_N];  const double cdf_Gauss_n= CDF_GAUSS_N;
-// double cdfInv_gamma[CDF_GAMMA_N];  const double cdf_gamma_n= CDF_GAMMA_N;
-// double cdfInv_JBeta[CDF_JBETA_N];  const double cdf_JBeta_n= CDF_JBETA_N;
-
-// //  Precompute the cumulative probabilities of μ and σ discrete values.
-// //  The probabilities depend on the current prior_params values
-// void cdfInv_precompute(){
-//   double x;
-
-//   timespec_setToNow( &before_time );
-
-//   // Since Normal range is unbounded, precompute cdfInv for vals:  ¹⁄₍ₙ₊₁₎...ⁿ⁄₍ₙ₊₁₎
-//   for(  uint i= 0; i < cdf_Gauss_n; ++i  ){
-//     x= (i+1) / (double) (1+cdf_Gauss_n);
-//     cdfInv_Gauss[i]=  gsl_cdf_gaussian_Pinv( x, mu_prior_params.sigma );
-//   }
-//   for(  uint i= 0; i < cdf_gamma_n; ++i  ){
-//     x= i / (double) (cdf_gamma_n);
-//     cdfInv_gamma[i]=  gsl_cdf_gamma_Pinv( x, sigma_prior_param_a, sigma_prior_param_b );
-//     //printf( "cdfInv_Gamma[%u]= %g\n", i, cdfInv_gamma[i] );
-//   }
-//   for(  uint i= 0; i < cdf_JBeta_n; ++i  ){
-//     // By symmetry, only need Beta values for p ≦ 0.5.  For example p=0.8, is the same p=0.2 with Gauss components swapped.
-//     x= 0.5 * i / (double) (cdf_JBeta_n);
-//     cdfInv_JBeta[i]=  gsl_cdf_beta_Pinv( x, 0.5, 0.5 );
-//     //printf( "cdfInv_JBeta[%u]= %g\n", i, cdfInv_JBeta[i] );
-//   }
-
-//   ADD_TIME_AFTER_BEFORE( SUM_PRECOMP );
-// }
-
-
-
-
 /* ───────────  Probability Computations on the Data  ────────── */
 
 // Return Ｐ[D|μ,σ]
@@ -256,16 +218,10 @@ double data_Gauss2_maxLogLikelihood(){
 
   const uint maxIter = 500;
   const double tol = 1e-10; // tolerance for convergence, based on log likelihood change
-  const double minSigma = 1e-6;
-  const double minWeight = 1e-6;
 
   // Initialization
   double mean = data_sample_mean();
   double std = sqrt( data_sample_variance() );
-
-  if( std < minSigma ){
-    std = 1.0;
-  }
 
   Gauss_params g1 = { mean - 0.5 * std, std };
   Gauss_params g2 = { mean + 0.5 * std, std };
@@ -288,7 +244,7 @@ double data_Gauss2_maxLogLikelihood(){
   for( uint iter = 0; iter < maxIter; ++iter ){
 
     double N1 = 0.0; //effective number of points assigned to component 1
-    double N2 = 0.0; //effective number of points assigned to component 1
+    double N2 = 0.0; //effective number of points assigned to component 2
     double sum1 = 0.0;
     double sum2 = 0.0;
 
@@ -300,11 +256,7 @@ double data_Gauss2_maxLogLikelihood(){
       double denom = p1 + p2;
 
       double r1;
-      if( denom <= 0.0 || !isfinite(denom) ){
-        r1 = 0.5;
-      }else{
-        r1 = p1 / denom;
-      }
+      r1 = p1 / denom;
 
       double r2 = 1.0 - r1;
 
@@ -313,14 +265,6 @@ double data_Gauss2_maxLogLikelihood(){
 
       sum1 += r1 * data[i];
       sum2 += r2 * data[i];
-    }
-
-    // check if N1 or N2 is too small, to avoid one of the components collapsing to zero weight
-    if( N1 < minWeight * dataN || N2 < minWeight * dataN ){
-      if( trace_EM ){
-        printf("[EM stop] dead component: N1=%g, N2=%g\n", N1, N2);
-      }
-      break;
     }
 
     // M step: update means
@@ -338,11 +282,7 @@ double data_Gauss2_maxLogLikelihood(){
       double denom = p1 + p2;
 
       double r1;
-      if( denom <= 0.0 || !isfinite(denom) ){
-        r1 = 0.5;
-      }else{
-        r1 = p1 / denom;
-      }
+      r1 = p1 / denom;
 
       double r2 = 1.0 - r1;
 
@@ -355,14 +295,6 @@ double data_Gauss2_maxLogLikelihood(){
 
     var1 /= N1;
     var2 /= N2;
-
-    if( var1 < minSigma * minSigma ){
-      var1 = minSigma * minSigma;
-    }
-
-    if( var2 < minSigma * minSigma ){
-      var2 = minSigma * minSigma;
-    }
 
     // M step update
     mixCof = N1 / (double)dataN;
@@ -405,102 +337,6 @@ double data_Gauss2_maxLogLikelihood(){
   return curLogLik;
 }
 
-
-
-// /* Compute Riemann sum to approximate the integral
-//  *
-//  * ∫ μ,σ  Ｐ[D|μ,σ]
-//  *
-// */
-// double data_prob_1component_bySumming(){
-//   double prob_total= 0.0;
-
-//   timespec_setToNow( &before_time );
-//   for(  uint m= 0;  m < cdf_Gauss_n;  ++m  ){
-//     double mu= cdfInv_Gauss[m];
-//     for(  uint s= 0;  s < cdf_gamma_n;  ++s  ){
-//       double sigma=  sigma_of_precision( cdfInv_gamma[s] );
-//       Gauss_params cur_params= {mu, sigma};
-//       prob_total += prob_data_given_1Gauss( cur_params );
-//     }
-//   }
-
-//   ADD_TIME_AFTER_BEFORE( T_SUM1 );
-//   return  prob_total / (double) (cdf_Gauss_n * cdf_gamma_n);
-// }
-
-
-// /* Compute Riemann sum to approximate integral
-//  *
-//  * ∫ m,μ₁,σ₁,μ₂,σ₂  P[D|m,μ₁,σ₁,μ₂,σ₂]
-//  *
-// */
-// double data_prob_2component_bySumming(){
-//   double prob_total= 0.0;
-
-//   timespec_setToNow( &before_time );
-//   for(  uint m1= 0;  m1 < cdf_Gauss_n;  ++m1  ){
-//     double mu1= cdfInv_Gauss[m1];
-//     for(  uint m2= 0;  m2 < cdf_Gauss_n;  ++m2  ){
-//       double mu2= cdfInv_Gauss[m2];
-//       for(  uint s1= 0;  s1 < cdf_gamma_n;  ++s1  ){
-//         double sigma1=  sigma_of_precision( cdfInv_gamma[s1] );
-//         Gauss_params cur_params1= {mu1, sigma1};
-//         for(  uint s2= 0;  s2 < cdf_gamma_n;  ++s2  ){
-//           double sigma2=  sigma_of_precision( cdfInv_gamma[s2] );
-//           Gauss_params cur_params2= {mu2, sigma2};
-//           for(  uint mi= 0;  mi < cdf_JBeta_n;  ++mi  ){
-//             double mixCof= cdfInv_JBeta[mi];
-//             prob_total +=  prob_data_given_2Gauss( mixCof, cur_params1, cur_params2 );
-//           }
-//         }
-//       }
-//     }
-//   }
-
-//   ADD_TIME_AFTER_BEFORE( T_SUM2 );
-//   return  prob_total / (double) (cdf_Gauss_n * cdf_Gauss_n * cdf_gamma_n * cdf_gamma_n * cdf_JBeta_n);
-// }
-
-
-
-// /*  Use sampling to estimate
-//  *  ∫ μ,σ  P[D|μ,σ]
-//  */
-// double data_prob_1component_bySampling(){
-//   double prob_total= 0.0;
-
-//   timespec_setToNow( &before_time );
-//   for( uint iter= 0;  iter < sampleRepeatNum; ++iter ){
-//     Gauss_params params= prior_Gauss_params_sample();
-//     prob_total += prob_data_given_1Gauss( params );
-//   }
-
-//   ADD_TIME_AFTER_BEFORE( T_SAMP1 );
-//   return  prob_total / (double) sampleRepeatNum;
-// }
-
-
-
-// /*  Use sampling to estimate
-//  *  ∫ m,μ₁,σ₁,μ₂,σ₂  P[D|m,μ₁,σ₁,μ₂,σ₂]
-//  */
-// double data_prob_2component_bySampling(){
-//   double prob_total= 0.0;
-
-//   timespec_setToNow( &before_time );
-//   for( uint iter= 0;  iter < sampleRepeatNum; ++iter ){
-//     Gauss_mixture_params params=  prior_Gauss_mixture_params_sample();
-//     prob_total += prob_data_given_2Gauss( params.mixCof, params.Gauss1, params.Gauss2 );
-//   }
-
-//   ADD_TIME_AFTER_BEFORE( T_SAMP2 );
-//   return  prob_total / (double) sampleRepeatNum;
-// }
-
-
-
-
 // Is flag NAME given on command line?
 // NAME includes leading hyphens, e.g. '--help'
 bool cliFlagGivenP( int* argcR, char *argv[], const char* name ){
@@ -526,8 +362,6 @@ void run_EM_test(){
    * True model:
    *   component 1: N(-3, 0.5)
    *   component 2: N(+3, 0.5)
-   *
-   * This should be easy for GMM-EM.
    */
   Gauss_mixture_params true_params;
   true_params.mixCof = 0.5;
@@ -538,7 +372,7 @@ void run_EM_test(){
 
   data_generate_2component( true_params );
 
-  printf("\n========== EM unit test ==========\n");
+  printf("\n========== EM test ==========\n");
 
   printf("True generating model:\n");
   printf("  mixCof = %.6f\n", true_params.mixCof);
@@ -562,9 +396,9 @@ void run_EM_test(){
   printf("  difference ll2 - ll1             = %.10f\n", ll2 - ll1);
 
   if( ll2 >= ll1 ){
-    printf("\n[PASS] two-component model has higher or equal maximum log-likelihood.\n");
+    printf("\ntwo-component model has higher or equal maximum log-likelihood.\n");
   }else{
-    printf("\n[CHECK] two-component model is lower. EM may be stuck in a local optimum.\n");
+    printf("\ntwo-component model is lower. EM may be stuck in a local optimum.\n");
   }
 
   printf("==================================\n\n");
@@ -580,79 +414,3 @@ int main( int argc, char *argv[] ){
 
   return 0;
 }
-
-
-// int main( int argc, char *argv[] ){
-
-//   uint datasets_n= 10;
-
-//   // So we can skip the 1-component generated datasets when we want to.
-//   bool skip_1component_datasetsP= cliFlagGivenP( &argc, argv, "--skip1c" );
-
-//   {
-//     char usage_fmt[]=  "Usage: %s [--skip1c] [num_datasets]\n";
-//     switch( argc ){
-//     case 1:
-//       break;
-//     case 2:
-//       datasets_n=  atoi( argv[1] );
-//       if( !datasets_n ){
-//         printf(  usage_fmt, argv[0]  );
-//         exit( 64 );
-//       }
-//       break;
-//     default:
-//       printf(  usage_fmt, argv[0]  );
-//       exit( 64 );
-//     }
-//   }
-
-//   GSLfun_setup();
-//   double prob_data1_bySampling, prob_data2_bySampling;
-//   double prob_data1_bySumming,  prob_data2_bySumming;
-
-//   cdfInv_precompute();
-
-
-//   uint model1_sampling_favors1=  0;
-//   uint model1_summing__favors1=  0;
-//   uint model2_sampling_favors1=  0;
-//   uint model2_summing__favors1=  0;
-
-
-
-//   printf(  "Starting computation for %d datasets each. ...\n",  datasets_n  );
-
-//   if( !skip_1component_datasetsP ){
-//     printf( "\nData generated with one component\n" );
-//     for(  uint iter= 0;  iter < datasets_n;  ++iter  ){
-//       Gauss_params model_params = prior_Gauss_params_sample();
-//       printf(  "generating data with: (μ,σ) =  (%4.2f,%4.2f)\n", model_params.mu, model_params.sigma  );
-//       data_generate_1component( model_params );
-//       COMPUTE_DATA_PROBS_PRINT_RESULTS(1);
-//     }
-//   }
-
-//   printf( "\nData generated with two components\n" );
-//   for(  uint iter= 0;  iter < datasets_n;  ++iter  ){
-//     Gauss_mixture_params model_params=  prior_Gauss_mixture_params_sample();
-//     printf(  "generating data with:  m; (μ1,σ1); (μ2,σ2) =  %5.3f; (%4.2f,%4.2f); (%4.2f,%4.2f)\n",
-//              model_params.mixCof,
-//              model_params.Gauss1.mu, model_params.Gauss1.sigma,
-//              model_params.Gauss2.mu, model_params.Gauss2.sigma  );
-//     data_generate_2component( model_params );
-//     COMPUTE_DATA_PROBS_PRINT_RESULTS(2);
-//   }
-
-//   printf( "By sampling: Model1 data, correct selection %u/%u\n", model1_sampling_favors1, datasets_n  );
-//   printf( "             Model2 data, correct selection %u/%u\n", (datasets_n - model2_sampling_favors1), datasets_n  );
-//   printf( "By summing:  Model1 data, correct selection %u/%u\n", model1_summing__favors1, datasets_n  );
-//   printf( "             Model2 data, correct selection %u/%u\n", (datasets_n - model2_summing__favors1), datasets_n  );
-
-//   printf( "total times spent are:\n-PRECOMP-\t--SUM1---\t--SAMP1--\t--SUM2---\t--SAMP2-\n" );
-//   for( int i= 0; i < sizeof(tot_msec_time)/sizeof(tot_msec_time[0]); i++ ){
-//     if( i )  printf( "\t" );
-//     printf( "%9g", tot_msec_time[i] );
-//   }
-//   printf( "\n" );
-// }
