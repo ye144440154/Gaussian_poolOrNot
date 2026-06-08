@@ -30,7 +30,7 @@
   prob_data2_bySumming =  data_prob_2component_bySumming();                \
   if(  prob_data1_bySampling > prob_data2_bySampling  )   ++model##NUM##_sampling_favors1; \
   if(  prob_data1_bySumming  > prob_data2_bySumming   )   ++model##NUM##_summing__favors1; \
-  printf( "Data maximum likelihood under (one,two) component model= (%g,TODO)\n", \
+  printf( "Data maximum likelihood under (one,two) component model= (%g,%g)\n", \
           data_Gauss1_maxLikelihood() , data_Gauss2_maxLikelihood()  \
           );                                                               \
   printf( "Integrals by sampling= (%g,%g)  by summing: (%g,%g)\n\n",       \
